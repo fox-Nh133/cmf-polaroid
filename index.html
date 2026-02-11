@@ -713,6 +713,37 @@
             ctx.closePath();
         }
 
+        // デバイスに画像を保存 (iOS対応)
+        async function saveToDevice(blob, timestamp) {
+            const filename = `Rover_${timestamp}.jpg`;
+            const file = new File([blob], filename, { type: 'image/jpeg' });
+            
+            // Share API対応チェック (iOS Safari等)
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                try {
+                    await navigator.share({
+                        files: [file],
+                        title: '奈良彩散歩',
+                        text: '写真を保存'
+                    });
+                    return;
+                } catch (err) {
+                    if (err.name !== 'AbortError') {
+                        console.error('Share API error:', err);
+                    }
+                    // キャンセルした場合は何もしない
+                    return;
+                }
+            }
+            
+            // フォールバック: 通常のダウンロード
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = URL.createObjectURL(blob);
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(link.href), 100);
+        }
+
         // --- 保存処理 (DL & DB保存) ---
         function finalizePhoto(canvas, tag, dateStr) {
             return new Promise((resolve, reject) => {
@@ -746,10 +777,7 @@
                     // B. スマホ本体にダウンロード保存 (設定確認)
                     const saveLocal = document.getElementById('save-local-toggle').checked;
                     if (saveLocal) {
-                        const link = document.createElement('a');
-                        link.download = `Rover_${timestamp}.jpg`;
-                        link.href = URL.createObjectURL(blob);
-                        link.click();
+                        saveToDevice(blob, timestamp);
                     }
 
                 }, 'image/jpeg', 0.9);
@@ -808,14 +836,8 @@
         }
 
         // --- 画像ダウンロード (Blobから) ---
-        function downloadImageFromBlob(id, blob) {
-            const link = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-            link.download = `Rover_${id}.jpg`;
-            link.href = url;
-            link.click();
-            // メモリ解放
-            setTimeout(() => URL.revokeObjectURL(url), 100);
+        async function downloadImageFromBlob(id, blob) {
+            await saveToDevice(blob, id);
             showNotification("写真を保存しました", "success");
         }
 
