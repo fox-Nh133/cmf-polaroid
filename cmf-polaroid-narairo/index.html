@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="奈良色散歩" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <title>Rover Scout Nature Collector</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            text-align: center; 
+            background: #f4f4f4; 
+            margin: 0; 
+            padding: 0; 
+            color: #333;
+            padding-bottom: 80px; /* タブバーの分空ける */
+        }
+
+        /* --- 共通レイアウト --- */
+        .container { display: none; padding: 10px; max-width: 600px; margin: 0 auto; }
+        .active-view { display: block; }
+
+        h3 { margin: 10px 0; font-size: 1.1rem; color: #2c3e50; }
+
+        /* --- 撮影画面用スタイル --- */
+        #preview-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            background: #000;
+            overflow: hidden;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            margin-bottom: 15px;
+            margin-top: 20px;
+        }
+
+        video { width: 100%; height: 100%; object-fit: cover; }
+
+        #preview-frame {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 25%;
+            background: rgba(255, 255, 255, 0.9); z-index: 2; display: block;
+            pointer-events: none;
+        }
+        #preview-canvas {
+            width: 100%; height: 100%; display: block;
+        }
+
+        .controls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+        
+        button { 
+            padding: 12px 0; border: none; border-radius: 6px; cursor: pointer; 
+            font-weight: bold; font-size: 0.9rem; background: white; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: 0.2s;
+        }
+        button:active { transform: scale(0.98); }
+
+        .tag-btn.active { color: white; }
+        .tag-btn.active[data-tag="色"] { background: #F4B400; }
+        .tag-btn.active[data-tag="模様"] { background: #DB4437; }
+        .tag-btn.active[data-tag="形"] { background: #0F9D58; }
+        
+        #shutter { 
+            grid-column: span 3; background: #E91E63; color: white; 
+            font-size: 1.1rem; padding: 15px 0; margin-top: 5px;
+        }
+
+        /* --- ギャラリー画面用スタイル --- */
+        #gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr); /* 2列表示 */
+            gap: 10px;
+        }
+        .gallery-item {
+            background: white; border-radius: 8px; overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); position: relative;
+        }
+        .gallery-item img { width: 100%; display: block; aspect-ratio: 1/1; object-fit: contain; }
+        .delete-btn {
+            position: absolute; top: 5px; right: 5px;
+            background: rgba(0, 0, 0, 0.629); color: white;
+            border: none; border-radius: 50%; width: 30px; height: 30px;
+            font-size: 1.2rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* --- 下部タブバー --- */
+        .tab-bar {
+            position: fixed; bottom: 0; left: 0; width: 100%; height: 60px;
+            background: white; border-top: 1px solid #ddd;
+            display: flex; justify-content: space-around; align-items: center;
+            z-index: 100;
+        }
+        .tab-item {
+            flex: 1; text-align: center; padding: 10px; font-size: 0.8rem; color: #888; cursor: pointer;
+        }
+        .tab-item.active-tab { color: #E91E63; font-weight: bold; }
+        .tab-icon { display: block; font-size: 1.5rem; margin-bottom: 2px; }
+
+        canvas { display: none; }
+
+        /* --- 通知 & モーダル --- */
+        #notification-area {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            width: 90%; max-width: 400px; z-index: 2000; pointer-events: none;
+        }
+        .notification {
+            background: #333; color: white; padding: 12px 20px; margin-bottom: 10px;
+            border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            font-size: 0.9rem; opacity: 0; transform: translateY(-20px);
+            transition: all 0.3s ease; text-align: center;
+        }
+        .notification.show { opacity: 1; transform: translateY(0); }
+        .notification.success { background: #4CAF50; }
+        .notification.error { background: #F44336; }
+
+        .confirm-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 3000;
+            display: none; align-items: center; justify-content: center;
+        }
+        .confirm-modal.active { display: flex; animation: fadeIn 0.2s; }
+        .confirm-box {
+            background: white; padding: 25px 20px 20px; border-radius: 12px;
+            width: 85%; max-width: 320px; text-align: center;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+        .confirm-text { margin-bottom: 25px; font-weight: bold; color: #333; }
+        .confirm-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .confirm-btn { padding: 12px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; }
+        .confirm-cancel { background: #f0f0f0; color: #333; }
+        .confirm-ok { background: #E91E63; color: white; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* --- シャッターエフェクト & ローディング --- */
+        #shutter-effect {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; opacity: 0; pointer-events: none; z-index: 10;
+        }
+        @keyframes shutterAnim {
+            0% { opacity: 0; }
+            10% { opacity: 0.8; }
+            100% { opacity: 0; }
+        }
+        .shutter-active { animation: shutterAnim 0.2s ease-out; }
+
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        .spin-icon { animation: spin 1s linear infinite; display: inline-block; }
+
+        /* 保存設定トグル */
+        .save-settings {
+            margin-top: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .save-settings label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            background: #fff;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            color: #555;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .save-settings input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #E91E63;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="notification-area"></div>
+    <div id="confirm-modal" class="confirm-modal">
+        <div class="confirm-box">
+            <div id="confirm-message" class="confirm-text">確認</div>
+            <div class="confirm-buttons">
+                <button class="confirm-btn confirm-cancel" onclick="closeConfirm(false)">キャンセル</button>
+                <button class="confirm-btn confirm-ok" onclick="closeConfirm(true)">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="camera-view" class="container active-view">
+        <div id="preview-wrapper">
+            <video id="video" autoplay playsinline muted></video>
+            <div id="preview-frame"><canvas id="preview-canvas"></canvas></div>
+            <div id="shutter-effect"></div>
+        </div>
+
+        <div class="controls">
+            <button class="tag-btn" data-tag="色" onclick="selectTag('色', this)"><i class="bi bi-palette-fill"></i> 色</button>
+            <button class="tag-btn" data-tag="模様" onclick="selectTag('模様', this)"><i class="bi bi-grid-3x3-gap-fill"></i> 模様</button>
+            <button class="tag-btn" data-tag="形" onclick="selectTag('形', this)"><i class="bi bi-pentagon-fill"></i> 形</button>
+            <button id="shutter" onclick="takePhoto()"><i class="bi bi-camera-fill"></i> 撮影・保存</button>
+        </div>
+        
+        <div class="save-settings">
+            <label>
+                <input type="checkbox" id="save-local-toggle" checked>
+                スマホ本体にも画像を保存
+            </label>
+        </div>
+
+        <div id="status" style="font-size: 0.8rem;">位置情報取得中...</div>
+    </div>
+
+    <div id="gallery-view" class="container">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
+            <h3 style="margin: 0;"><span id="count">0</span>枚</h3>
+            <button onclick="deleteAllPhotos()" style="width: auto; padding: 8px 12px; background: #eee; color: #333; box-shadow: none; border: 1px solid #ddd;">
+                <i class="bi bi-trash"></i> 全削除
+            </button>
+        </div>
+        <div id="gallery-grid">
+            </div>
+    </div>
+
+    <div class="tab-bar">
+        <div class="tab-item active-tab" onclick="switchTab('camera')">
+            <i class="bi bi-camera-fill tab-icon"></i>撮影
+        </div>
+        <div class="tab-item" onclick="switchTab('gallery')">
+            <i class="bi bi-images tab-icon"></i>ギャラリー
+        </div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+        // --- 変数定義 ---
+        let selectedTags = new Set();
+        let currentPos = { lat: null, lon: null };
+        const video = document.getElementById('video');
+        const status = document.getElementById('status');
+        const previewCanvas = document.getElementById('preview-canvas');
+        
+        // --- 通知・確認ダイアログ制御 ---
+        function showNotification(message, type = 'info') {
+            const area = document.getElementById('notification-area');
+            const notif = document.createElement('div');
+            notif.className = `notification ${type}`;
+            notif.innerText = message;
+            area.appendChild(notif);
+            
+            // アニメーション用
+            requestAnimationFrame(() => {
+                notif.classList.add('show');
+            });
+            
+            setTimeout(() => {
+                notif.classList.remove('show');
+                setTimeout(() => notif.remove(), 300);
+            }, 3000);
+        }
+
+        let confirmResolve = null;
+        function showConfirm(message) {
+            return new Promise((resolve) => {
+                document.getElementById('confirm-message').innerText = message;
+                document.getElementById('confirm-modal').classList.add('active');
+                confirmResolve = resolve;
+            });
+        }
+
+        window.closeConfirm = function(result) {
+            document.getElementById('confirm-modal').classList.remove('active');
+            if (confirmResolve) {
+                confirmResolve(result);
+                confirmResolve = null;
+            }
+        };
+
+        // ロゴを事前に読み込み
+        const globalLogoImg = new Image();
+        globalLogoImg.src = "assets/square_icon.png";
+        globalLogoImg.onload = () => updatePreview();
+        
+        // --- IndexedDBのセットアップ ---
+        let db;
+        const DB_NAME = "RoverScoutDB";
+        const DB_VERSION = 1;
+        
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = (event) => {
+            db = event.target.result;
+            // idをキーにして写真を保存するストアを作成
+            if (!db.objectStoreNames.contains("photos")) {
+                db.createObjectStore("photos", { keyPath: "id" });
+            }
+        };
+        request.onsuccess = (event) => {
+            db = event.target.result;
+            loadGallery(); // アプリ起動時にギャラリーを読み込み
+        };
+        request.onerror = (event) => {
+            console.error("Database error: " + event.target.errorCode);
+        };
+
+        // --- カメラ機能 ---
+        navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: "environment", aspectRatio: 1 }, audio: false 
+        }).then(stream => { video.srcObject = stream; })
+        .catch(err => showNotification("カメラエラー: " + err.message, 'error'));
+
+        if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(
+                (pos) => {
+                    currentPos.lat = pos.coords.latitude;
+                    currentPos.lon = pos.coords.longitude;
+                    status.innerText = `現在地: ${currentPos.lat.toFixed(4)}, ${currentPos.lon.toFixed(4)}`;
+                },
+                (err) => { status.innerText = "位置情報不可"; },
+                { enableHighAccuracy: true }
+            );
+        }
+
+        function selectTag(tag, btn) {
+            if (selectedTags.has(tag)) {
+                selectedTags.delete(tag);
+                btn.classList.remove('active');
+            } else {
+                selectedTags.add(tag);
+                btn.classList.add('active');
+            }
+            updatePreview();
+        }
+        
+        // プレビュー描画 (リアルタイムフレーム)
+        function updatePreview() {
+            if (!previewCanvas) return;
+            // 描画サイズを調整 (Retina対応)
+            const dpr = window.devicePixelRatio || 1;
+            const rect = previewCanvas.getBoundingClientRect();
+            if (rect.width === 0) return; // 表示されていない場合
+
+            previewCanvas.width = rect.width * dpr;
+            previewCanvas.height = rect.height * dpr;
+            
+            const pCtx = previewCanvas.getContext('2d');
+            pCtx.scale(dpr, dpr);
+            
+            // canvas.height は描画領域の高さ。
+            // takePhoto のロジックと合わせるため、擬似的な全体サイズ size を計算する
+            // frameHeight = size * 0.25 なので、 size = frameHeight * 4
+            // ここでの frameHeight は rect.height
+            
+            const frameHeight = rect.height;
+            const size = frameHeight * 4; 
+            const frameY = 0; // プレビュー用のcanvasはフレーム部分だけなのでTopは0
+            
+            pCtx.clearRect(0, 0, rect.width, rect.height);
+            // 背景はCSSで白半透明にしているので、ここでは要素を描画するだけだが、
+            // 完全に白にしてしうとCSSの透過が効かなくなる(DOM要素としてのcanvas)。
+            // takePhotoと同じく白背景を塗る
+            pCtx.fillStyle = "#ffffff";
+            pCtx.fillRect(0, 0, rect.width, rect.height);
+            
+            const padding = size * 0.03;
+            // height: padding*2 というのは流石に... takePhotoでは contentHeight = frameHeight - padding*2
+            const contentHeight = frameHeight - (padding * 2);
+            const contentY = padding; 
+
+            // --- 1. Logo Left ---
+            const logoSize = contentHeight * 0.6; 
+            const logoX = padding;
+            const logoY = contentY;
+
+            if (globalLogoImg.complete) {
+                const ratio = globalLogoImg.width / globalLogoImg.height;
+                const drawW = Math.min(logoSize * ratio, size * 0.2); 
+                const drawH = drawW / ratio;
+                pCtx.drawImage(globalLogoImg, logoX, logoY + (logoSize - drawH)/2, drawW, drawH);
+            }
+
+             // タイトル
+            pCtx.fillStyle = "#000000";
+            pCtx.textAlign = "left";
+            const titleFontSize = size * 0.045;
+            pCtx.font = `bold ${titleFontSize}px serif`;
+            pCtx.fillText("奈良彩散歩", logoX, logoY + logoSize + titleFontSize);
+
+            // 日付
+            const date = new Date();
+            const dateStr = `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()} ${date.getHours()}:${("0"+date.getMinutes()).slice(-2)}`;
+            const dateFontSize = size * 0.025;
+            pCtx.font = `${dateFontSize}px sans-serif`;
+            pCtx.fillStyle = "#666";
+            pCtx.fillText(dateStr, logoX, logoY + logoSize + titleFontSize + dateFontSize * 1.4);
+
+            // --- 3. Map Placeholder Right ---
+            const mapSize = contentHeight * 0.8;
+            const mapX = rect.width - padding - mapSize; // rect.widthを使う (sizeは擬似)
+            // rect.width と size (frameHeight*4) は videoのアスペクト比が1:1なら同じはず。
+            // CSSで width:100% なので、parent(1:1)の幅。
+            
+            // Map Placeholder Box
+            pCtx.fillStyle = "#eeeeee";
+            roundedRect(pCtx, mapX, contentY, mapSize, mapSize, 4);
+            pCtx.fill();
+            pCtx.strokeStyle = "#cccccc";
+            pCtx.lineWidth = 1;
+            pCtx.stroke();
+            
+            // Placeholder Icon/Text
+            pCtx.fillStyle = "#aaaaaa";
+            pCtx.textAlign = "center";
+            pCtx.font = `${size * 0.02}px sans-serif`;
+            pCtx.fillText("MAP", mapX + mapSize/2, contentY + mapSize/2 + (size*0.008));
+
+            // Address Placeholder
+            const addressText = "（撮影時に取得）";
+            pCtx.textAlign = "right";
+            pCtx.font = `${size * 0.025}px sans-serif`;
+            pCtx.fillStyle = "#999";
+            pCtx.fillText(addressText, rect.width - padding, contentY + mapSize + (size * 0.04));
+
+            // --- 2. Tags Center ---
+            // エリア計算 (takePhotoと同じ比率で)
+            const leftEnd = logoX + (size * 0.25); 
+            const rightStart = mapX - (size * 0.05);
+            // 実際のrect.widthを使って計算しなおす必要があるかも？
+            // size (=height*4) が width と乖離しているとずれる。
+            // 実際は width = height*4 (aspect 1:1 * 0.25 height) なので概ねあってるはず。
+            
+            const centerW = rightStart - leftEnd;
+            const centerX = leftEnd + (centerW / 2);
+            
+            const tagOrder = ['色', '模様', '形'];
+            const tags = Array.from(selectedTags).sort((a, b) => tagOrder.indexOf(a) - tagOrder.indexOf(b));
+            if (tags.length > 0) {
+                const tagSize = size * 0.035;
+                pCtx.font = `bold ${tagSize}px sans-serif`;
+                const tagPaddingX = tagSize * 0.8;
+                const tagPaddingY = tagSize * 0.4;
+                const tagGap = tagSize * 0.5;
+
+                const tagColors = { "色": "#F4B400", "模様": "#DB4437", "形": "#0F9D58" };
+                
+                let totalTagWidth = 0;
+                const textMetrics = tags.map(t => pCtx.measureText(t).width);
+                tags.forEach((t, i) => { totalTagWidth += textMetrics[i] + (tagPaddingX * 2); });
+                totalTagWidth += (tags.length - 1) * tagGap;
+
+                let currentTagX = centerX - (totalTagWidth / 2);
+                const tagY = contentY + (contentHeight / 2) - (tagSize / 2) - tagPaddingY;
+
+                tags.forEach((t, i) => {
+                    const w = textMetrics[i] + (tagPaddingX * 2);
+                    const h = tagSize + (tagPaddingY * 2);
+                    roundedRect(pCtx, currentTagX, tagY, w, h, h/2);
+                    pCtx.fillStyle = tagColors[t] || "#888";
+                    pCtx.fill();
+                    pCtx.fillStyle = "#ffffff";
+                    pCtx.textAlign = "center";
+                    pCtx.fillText(t, currentTagX + (w/2), tagY + h - (tagPaddingY * 1.2));
+                    currentTagX += w + tagGap;
+                });
+            } else {
+                 // タグ未選択時のガイド
+                pCtx.fillStyle = "#ccc";
+                pCtx.textAlign = "center";
+                pCtx.font = `${size * 0.025}px sans-serif`;
+                pCtx.fillText("タグを選択してください", centerX, contentY + (contentHeight/2)+ (size*0.01));
+            }
+        }
+        
+        // 初回実行 & 少し待ってから実行(レイアウト安定後)
+        setTimeout(updatePreview, 500);
+        setInterval(updatePreview, 60000); // 1分毎に時計更新
+
+        // 住所取得 (Reverse Geocoding)
+        async function getAddress(lat, lon) {
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&accept-language=ja`);
+                if (!res.ok) return null;
+                const data = await res.json();
+                const addr = data.address;
+                // 市町村 + 町名などをうまく抽出
+                const part1 = addr.city || addr.ward || addr.town_district || addr.county || "";
+                const part2 = addr.suburb || addr.quarter || addr.neighbourhood || addr.town || addr.village || "";
+                
+                let text = part1 + part2;
+                if (!text && data.display_name) {
+                    // フォールバック: display_nameの最初の部分
+                     text = data.display_name.split(',')[0];
+                }
+                return text || `Lat: ${lat.toFixed(3)}`;
+            } catch (e) {
+                console.error(e);
+                return null;
+            }
+        }
+
+        // --- 撮影と合成処理 ---
+        async function takePhoto() {
+            if (selectedTags.size === 0) { showNotification("タグ（色・模様・形）を少なくとも1つ選んでください", 'error'); return; }
+            if (!db) { showNotification("データベース準備中...", 'error'); return; }
+
+            // UI反映: シャッターエフェクト & ボタンLoading
+            const shutterBtn = document.getElementById('shutter');
+            const originalBtnText = shutterBtn.innerHTML;
+            
+            // ボタンをLoading状態に
+            shutterBtn.disabled = true;
+            shutterBtn.innerHTML = `<i class="bi bi-arrow-repeat spin-icon"></i> 保存中...`;
+            shutterBtn.style.background = "#ccc"; // 色味も変更
+
+            // シャッターアニメーション
+            const effect = document.getElementById('shutter-effect');
+            effect.classList.remove('shutter-active');
+            void effect.offsetWidth; // リフロー発火
+            effect.classList.add('shutter-active');
+
+            try {
+                // 少しだけ待ってシャッター閉じた感を演出してから処理開始
+                await new Promise(r => setTimeout(r, 100));
+
+                const canvas = document.getElementById('canvas');
+                const ctx = canvas.getContext('2d');
+                const size = Math.min(video.videoWidth, video.videoHeight);
+                
+                canvas.width = size;
+                canvas.height = size;
+
+                // 写真切り抜き
+                const sx = (video.videoWidth - size) / 2;
+                const sy = (video.videoHeight - size) / 2;
+                ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
+
+                // 白フレームエリア
+                const frameHeight = size * 0.25;
+                const frameY = size - frameHeight;
+                ctx.fillStyle = "#ffffff";
+                ctx.fillRect(0, frameY, size, frameHeight);
+                
+                // レイアウト定数
+                const padding = size * 0.03;
+                const contentHeight = frameHeight - (padding * 2);
+                const contentY = frameY + padding;
+
+                // --- 1. 左エリア：ロゴ & タイトル & 日付 ---
+                // ロゴのスペース計算 (正方形に近い比率で)
+                const logoSize = contentHeight * 0.6; 
+                const logoX = padding;
+                const logoY = contentY;
+
+                // ロゴ読み込み
+                const logoImg = new Image();
+                logoImg.src = "assets/square_icon.png";
+                await new Promise((resolve) => {
+                    logoImg.onload = () => {
+                    // アスペクト比維持して描画
+                    const ratio = logoImg.width / logoImg.height;
+                    // 幅が大きくなりすぎないように制限
+                    const drawW = Math.min(logoSize * ratio, size * 0.2); 
+                    const drawH = drawW / ratio;
+                    ctx.drawImage(logoImg, logoX, logoY + (logoSize - drawH)/2, drawW, drawH);
+                    resolve();
+                    };
+                    logoImg.onerror = resolve; // 失敗しても次へ
+                });
+
+                // タイトル「奈良彩散歩」
+                ctx.fillStyle = "#000000";
+                ctx.textAlign = "left";
+                const titleFontSize = size * 0.045;
+                ctx.font = `bold ${titleFontSize}px serif`; // 明朝体風
+                ctx.fillText("奈良彩散歩", logoX, logoY + logoSize + titleFontSize);
+
+                // 日付
+                const date = new Date();
+                const dateStr = `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()} ${date.getHours()}:${("0"+date.getMinutes()).slice(-2)}`;
+                const dateFontSize = size * 0.025;
+                ctx.font = `${dateFontSize}px sans-serif`;
+                ctx.fillStyle = "#666";
+                ctx.fillText(dateStr, logoX, logoY + logoSize + titleFontSize + dateFontSize * 1.4);
+
+                // --- 3. 右エリア：地図 & 住所 ---
+                // 先に右端を決める
+                const mapSize = contentHeight * 0.8;
+                const mapX = size - padding - mapSize;
+                
+                let addressText = "";
+                if (currentPos.lat) {
+                    // 地図描画 (zoom 13に広域化)
+                    const mapUrl = `https://static-maps.yandex.ru/1.x/?ll=${currentPos.lon},${currentPos.lat}&z=13&l=map&size=200,200`;
+                    const mapImg = new Image();
+                    mapImg.crossOrigin = "anonymous";
+                    mapImg.src = mapUrl;
+                    
+                    await new Promise((resolve) => {
+                        mapImg.onload = () => {
+                            ctx.save();
+                            // 角丸クリップ
+                            roundedRect(ctx, mapX, contentY, mapSize, mapSize, 4);
+                            ctx.clip();
+                            ctx.drawImage(mapImg, mapX, contentY, mapSize, mapSize);
+                            ctx.restore();
+                            // 枠線
+                            ctx.strokeStyle = "#ddd"; ctx.lineWidth = 1;
+                            roundedRect(ctx, mapX, contentY, mapSize, mapSize, 4);
+                            ctx.stroke();
+                            resolve();
+                        };
+                        mapImg.onerror = resolve;
+                    });
+
+                    // 住所取得
+                    status.innerText = "住所検索中...";
+                    const addr = await getAddress(currentPos.lat, currentPos.lon);
+                    status.innerText = addr || "住所不明";
+                    addressText = addr || `Lat: ${currentPos.lat.toFixed(3)}`;
+                }
+
+                // 住所テキスト描画
+                if (addressText) {
+                    ctx.textAlign = "right";
+                    ctx.font = `${size * 0.025}px sans-serif`;
+                    ctx.fillStyle = "#333";
+                    // 地図の下へ配置, 右揃え
+                    ctx.fillText(addressText, size - padding, contentY + mapSize + (size * 0.04));
+                }
+
+                // --- 2. 中央エリア：タグ ---
+                // 利用可能な幅: 左エリアの終わり 〜 右エリアの始まり
+                const leftEnd = logoX + (size * 0.25); // おおよその左エリア幅
+                const rightStart = mapX - (size * 0.05);
+                const centerW = rightStart - leftEnd;
+                const centerX = leftEnd + (centerW / 2);
+                
+                // タグ描画設定
+                const tagOrder = ['色', '模様', '形'];
+                const tags = Array.from(selectedTags).sort((a, b) => tagOrder.indexOf(a) - tagOrder.indexOf(b));
+                const tagSize = size * 0.035;
+                ctx.font = `bold ${tagSize}px sans-serif`;
+                const tagPaddingX = tagSize * 0.8;
+                const tagPaddingY = tagSize * 0.4;
+                const tagGap = tagSize * 0.5;
+
+                // タグの色定義
+                const tagColors = {
+                    "色": "#F4B400", // 黄色系
+                    "模様": "#DB4437", // 赤系
+                    "形": "#0F9D58"   // 緑系
+                };
+
+                // 全体の幅を計算して中央寄せ
+                let totalTagWidth = 0;
+                const textMetrics = tags.map(t => ctx.measureText(t).width);
+                tags.forEach((t, i) => {
+                    totalTagWidth += textMetrics[i] + (tagPaddingX * 2);
+                });
+                totalTagWidth += (tags.length - 1) * tagGap;
+
+                let currentTagX = centerX - (totalTagWidth / 2);
+                const tagY = contentY + (contentHeight / 2) - (tagSize / 2) - tagPaddingY; // 上下中央より少し上？
+
+                tags.forEach((t, i) => {
+                    const w = textMetrics[i] + (tagPaddingX * 2);
+                    const h = tagSize + (tagPaddingY * 2);
+                    const color = tagColors[t] || "#888";
+
+                    // 角丸四角形（背景）
+                    ctx.fillStyle = color;
+                    roundedRect(ctx, currentTagX, tagY, w, h, h/2);
+                    ctx.fill();
+
+                    // 文字
+                    ctx.fillStyle = "#ffffff";
+                    ctx.textAlign = "center";
+                    ctx.fillText(t, currentTagX + (w/2), tagY + h - (tagPaddingY * 1.2));
+
+                    currentTagX += w + tagGap;
+                });
+
+                // 保存
+                await finalizePhoto(canvas, tags.join(","), dateStr);
+
+            } catch(e) {
+                console.error(e);
+                showNotification("エラーが発生しました: " + e.message, 'error');
+            } finally {
+                // ボタン復帰
+                shutterBtn.disabled = false;
+                shutterBtn.innerHTML = originalBtnText;
+                shutterBtn.style.background = ""; // cssの元色に戻る
+            }
+        }
+
+        // 角丸四角形を描くヘルパー関数
+        function roundedRect(ctx, x, y, width, height, radius) {
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.closePath();
+        }
+
+        // --- 保存処理 (DL & DB保存) ---
+        function finalizePhoto(canvas, tag, dateStr) {
+            return new Promise((resolve, reject) => {
+                // 1. Blob（画像データ）に変換
+                canvas.toBlob((blob) => {
+                    if (!blob) {
+                        reject(new Error("画像の生成に失敗しました"));
+                        return;
+                    }
+                    const timestamp = Date.now();
+
+                    // A. アプリ内DBに保存
+                    const tx = db.transaction(["photos"], "readwrite");
+                    const store = tx.objectStore("photos");
+                    const item = {
+                        id: timestamp,
+                        imageBlob: blob,
+                        tag: tag,
+                        date: dateStr
+                    };
+                    store.add(item);
+
+                    tx.oncomplete = () => {
+                        showNotification("保存しました！", 'success');
+                        loadGallery(); // ギャラリー更新
+                        resolve();
+                    };
+                    
+                    tx.onerror = (e) => reject(e);
+
+                    // B. スマホ本体にダウンロード保存 (設定確認)
+                    const saveLocal = document.getElementById('save-local-toggle').checked;
+                    if (saveLocal) {
+                        const link = document.createElement('a');
+                        link.download = `Rover_${timestamp}.jpg`;
+                        link.href = URL.createObjectURL(blob);
+                        link.click();
+                    }
+
+                }, 'image/jpeg', 0.9);
+            });
+        }
+
+        // --- ギャラリー読み込み ---
+        function loadGallery() {
+            if (!db) return;
+            const galleryGrid = document.getElementById("gallery-grid");
+            const countSpan = document.getElementById("count");
+            galleryGrid.innerHTML = "";
+            
+            const tx = db.transaction(["photos"], "readonly");
+            const store = tx.objectStore("photos");
+            const request = store.openCursor(null, 'prev'); // 新しい順
+            
+            let count = 0;
+
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    const data = cursor.value;
+                    const imgUrl = URL.createObjectURL(data.imageBlob);
+
+                    const div = document.createElement("div");
+                    div.className = "gallery-item";
+                    div.innerHTML = `
+                        <img src="${imgUrl}" onclick="window.open('${imgUrl}')">
+                        <button class="delete-btn" onclick="deletePhoto(${data.id})">×</button>
+                    `;
+                    galleryGrid.appendChild(div);
+                    
+                    count++;
+                    cursor.continue();
+                } else {
+                    countSpan.innerText = count;
+                }
+            };
+        }
+
+        // --- 写真削除 ---
+        async function deletePhoto(id) {
+            const result = await showConfirm("この写真を削除しますか？");
+            if(!result) return;
+            
+            const tx = db.transaction(["photos"], "readwrite");
+            tx.objectStore("photos").delete(id);
+            tx.oncomplete = () => {
+                loadGallery();
+                showNotification("削除しました", "success");
+            };
+        }
+
+        // --- 全削除 ---
+        async function deleteAllPhotos() {
+            const count = document.getElementById("count").innerText;
+            if (count === "0") {
+                showNotification("削除する写真がありません", "info");
+                return;
+            }
+
+            const result = await showConfirm("全ての写真を削除しますか？\nこの操作は取り消せません。");
+            if (!result) return;
+            
+            const tx = db.transaction(["photos"], "readwrite");
+            tx.objectStore("photos").clear();
+            tx.oncomplete = () => {
+                loadGallery();
+                showNotification("全データを削除しました", "success");
+            };
+        }
+
+        // --- タブ切り替え ---
+        function switchTab(tabName) {
+            // ビューの切り替え
+            document.querySelectorAll('.container').forEach(el => el.classList.remove('active-view'));
+            document.getElementById(`${tabName}-view`).classList.add('active-view');
+            
+            // タブの見た目切り替え
+            document.querySelectorAll('.tab-item').forEach(el => el.classList.remove('active-tab'));
+            // 簡易的に判定（アイコンの親要素を探すなど改善可だが、ここでは順序依存でシンプルに）
+            if(tabName === 'camera') document.querySelector('.tab-item:nth-child(1)').classList.add('active-tab');
+            else document.querySelector('.tab-item:nth-child(2)').classList.add('active-tab');
+        }
+    </script>
+</body>
+</html>
