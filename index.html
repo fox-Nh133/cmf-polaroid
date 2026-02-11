@@ -88,6 +88,13 @@
             font-size: 1.2rem; cursor: pointer;
             display: flex; align-items: center; justify-content: center;
         }
+        .download-btn {
+            position: absolute; top: 5px; right: 40px;
+            background: rgba(0, 150, 0, 0.8); color: white;
+            border: none; border-radius: 50%; width: 30px; height: 30px;
+            font-size: 1rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+        }
 
         /* --- 下部タブバー --- */
         .tab-bar {
@@ -136,6 +143,28 @@
         .confirm-cancel { background: #f0f0f0; color: #333; }
         .confirm-ok { background: #E91E63; color: white; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* --- 画像モーダル --- */
+        .image-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 3000;
+            display: none; align-items: center; justify-content: center;
+            flex-direction: column;
+        }
+        .image-modal.active { display: flex; animation: fadeIn 0.2s; }
+        .image-modal img {
+            max-width: 90%; max-height: 70vh;
+            object-fit: contain; border-radius: 8px;
+        }
+        .modal-buttons {
+            display: flex; gap: 15px; margin-top: 20px;
+        }
+        .modal-btn {
+            padding: 12px 24px; border-radius: 8px; border: none;
+            font-weight: bold; cursor: pointer; font-size: 1rem;
+        }
+        .modal-download-btn { background: #4CAF50; color: white; }
+        .modal-close-btn { background: #f0f0f0; color: #333; }
 
         /* --- シャッターエフェクト & ローディング --- */
         #shutter-effect {
@@ -191,6 +220,18 @@
         </div>
     </div>
 
+    <div id="image-modal" class="image-modal">
+        <img id="modal-image" src="" alt="拡大表示">
+        <div class="modal-buttons">
+            <button class="modal-btn modal-download-btn" onclick="downloadModalImage()">
+                <i class="bi bi-download"></i> ダウンロード
+            </button>
+            <button class="modal-btn modal-close-btn" onclick="closeImageModal()">
+                <i class="bi bi-x-lg"></i> 閉じる
+            </button>
+        </div>
+    </div>
+
     <div id="camera-view" class="container active-view">
         <div id="preview-wrapper">
             <video id="video" autoplay playsinline muted></video>
@@ -218,9 +259,14 @@
     <div id="gallery-view" class="container">
         <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
             <h3 style="margin: 0;"><span id="count">0</span>枚</h3>
-            <button onclick="deleteAllPhotos()" style="width: auto; padding: 8px 12px; background: #eee; color: #333; box-shadow: none; border: 1px solid #ddd;">
-                <i class="bi bi-trash"></i> 全削除
-            </button>
+            <div style="display: flex; gap: 8px;">
+                <button onclick="downloadAllPhotos()" style="width: auto; padding: 8px 12px; background: #4CAF50; color: white; box-shadow: none; border: none;">
+                    <i class="bi bi-download"></i> 一括DL
+                </button>
+                <button onclick="deleteAllPhotos()" style="width: auto; padding: 8px 12px; background: #eee; color: #333; box-shadow: none; border: 1px solid #ddd;">
+                    <i class="bi bi-trash"></i> 全削除
+                </button>
+            </div>
         </div>
         <div id="gallery-grid">
             </div>
@@ -813,7 +859,15 @@
                     img.style.display = "block";
                     img.style.aspectRatio = "1/1";
                     img.style.objectFit = "contain";
-                    img.onclick = () => downloadImageFromBlob(data.id, data.imageBlob);
+                    img.onclick = () => showImageModal(imgUrl, data.id, data.imageBlob);
+                    
+                    const downloadBtn = document.createElement("button");
+                    downloadBtn.className = "download-btn";
+                    downloadBtn.innerHTML = '<i class="bi bi-download"></i>';
+                    downloadBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        downloadImageFromBlob(data.id, data.imageBlob);
+                    };
                     
                     const deleteBtn = document.createElement("button");
                     deleteBtn.className = "delete-btn";
@@ -824,6 +878,7 @@
                     };
                     
                     div.appendChild(img);
+                    div.appendChild(downloadBtn);
                     div.appendChild(deleteBtn);
                     galleryGrid.appendChild(div);
                     
@@ -835,10 +890,105 @@
             };
         }
 
+        // --- 画像モーダル表示 ---
+        let currentModalBlob = null;
+        let currentModalId = null;
+
+        function showImageModal(imgUrl, id, blob) {
+            const modal = document.getElementById('image-modal');
+            const img = document.getElementById('modal-image');
+            img.src = imgUrl;
+            currentModalBlob = blob;
+            currentModalId = id;
+            modal.classList.add('active');
+        }
+
+        function closeImageModal() {
+            const modal = document.getElementById('image-modal');
+            modal.classList.remove('active');
+            currentModalBlob = null;
+            currentModalId = null;
+        }
+
+        async function downloadModalImage() {
+            if (currentModalBlob && currentModalId) {
+                await saveToDevice(currentModalBlob, currentModalId);
+                showNotification("写真を保存しました", "success");
+            }
+        }
+
         // --- 画像ダウンロード (Blobから) ---
         async function downloadImageFromBlob(id, blob) {
             await saveToDevice(blob, id);
             showNotification("写真を保存しました", "success");
+        }
+
+        // --- 一括ダウンロード ---
+        async function downloadAllPhotos() {
+            const count = document.getElementById("count").innerText;
+            if (count === "0") {
+                showNotification("ダウンロードする写真がありません", "info");
+                return;
+            }
+
+            const result = await showConfirm(`全ての写真(${count}枚)を一括ダウンロードしますか？`);
+            if (!result) return;
+
+            const tx = db.transaction(["photos"], "readonly");
+            const store = tx.objectStore("photos");
+            const request = store.getAll();
+
+            request.onsuccess = async (event) => {
+                const photos = event.target.result;
+                
+                if (photos.length === 0) {
+                    showNotification("ダウンロードする写真がありません", "info");
+                    return;
+                }
+
+                showNotification(`${photos.length}枚の写真をダウンロード中...`, "info");
+
+                // 全ての写真をFileオブジェクトに変換
+                const files = photos.map(photo => {
+                    const filename = `Rover_${photo.id}.jpg`;
+                    return new File([photo.imageBlob], filename, { type: 'image/jpeg' });
+                });
+
+                // Share API対応チェック
+                if (navigator.canShare && navigator.canShare({ files: files })) {
+                    try {
+                        await navigator.share({
+                            files: files,
+                            title: '奈良彩散歩',
+                            text: `${files.length}枚の写真`
+                        });
+                        showNotification("全ての写真を保存しました", "success");
+                    } catch (err) {
+                        if (err.name !== 'AbortError') {
+                            console.error('Share API error:', err);
+                            showNotification("ダウンロードがキャンセルされました", "info");
+                        }
+                    }
+                } else {
+                    // フォールバック: 1枚ずつダウンロード
+                    for (let i = 0; i < files.length; i++) {
+                        const link = document.createElement('a');
+                        link.download = files[i].name;
+                        link.href = URL.createObjectURL(files[i]);
+                        link.click();
+                        setTimeout(() => URL.revokeObjectURL(link.href), 100);
+                        
+                        if (i < files.length - 1) {
+                            await new Promise(r => setTimeout(r, 300));
+                        }
+                    }
+                    showNotification("全ての写真を保存しました", "success");
+                }
+            };
+
+            request.onerror = () => {
+                showNotification("ダウンロード中にエラーが発生しました", "error");
+            };
         }
 
         // --- 写真削除 ---
